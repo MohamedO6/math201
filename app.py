@@ -1,213 +1,172 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from image_compression import *
 
-# Page configuration
+# Page config
 st.set_page_config(
-    page_title="Image Compression Tool",
-    page_icon="📸",
+    page_title="Fast Image Compressor",
+    page_icon="⚡",
     layout="wide"
 )
 
-# Title and description
-st.title("📸 Image Compression using Linear Algebra")
-st.markdown("""
-This tool demonstrates **image compression** using **Singular Value Decomposition (SVD)** 
-and **rank reduction** techniques from linear algebra.
-""")
-
+# Title
+st.title("⚡ Fast Image Compression using SVD")
+st.markdown("**Optimized with caching for instant results!**")
 st.divider()
 
-# Sidebar for controls
-st.sidebar.header("⚙️ Settings")
+# Sidebar
+st.sidebar.header("⚙️ Controls")
 
-# File uploader
+# Upload
 uploaded_file = st.sidebar.file_uploader(
-    "Upload an Image",
-    type=['png', 'jpg', 'jpeg', 'bmp'],
+    "Upload Image",
+    type=['png', 'jpg', 'jpeg'],
     help="Upload a grayscale or color image"
 )
 
-# Add example image option
-use_example = st.sidebar.checkbox("Use Example Image", value=False)
+# Max size option
+max_dimension = st.sidebar.select_slider(
+    "Image Size (for speed)",
+    options=[400, 600, 800, 1000],
+    value=800,
+    help="Larger = better quality but slower"
+)
 
-# Main content
+use_example = st.sidebar.checkbox("Use Example Image")
+
+# Main app
 if uploaded_file is not None or use_example:
     
     # Load image
     if use_example:
-        # Create a simple example image (checkerboard pattern)
-        st.info("📌 Using example checkerboard image")
-        size = 200
+        st.info("📌 Using example checkerboard pattern")
+        size = 400
         img_matrix = np.kron(
             [[1, 0] * 4, [0, 1] * 4] * 4,
             np.ones((size//8, size//8))
         ) * 255
+        img_matrix = img_matrix.astype(np.float32)
     else:
-        img_matrix = load_image(uploaded_file, grayscale=True)
+        with st.spinner("⏳ Loading image..."):
+            img_matrix = load_image_optimized(uploaded_file, grayscale=True, max_size=max_dimension)
     
     if img_matrix is not None:
-        
-        # Get image dimensions
         m, n = img_matrix.shape
         max_rank = min(m, n)
         
-        # Display original image info
-        st.sidebar.success(f"✅ Image loaded: {m} × {n} pixels")
+        st.sidebar.success(f"✅ Loaded: {m}×{n} pixels")
+        
+        # Compute SVD ONCE (cached)
+        with st.spinner("🔄 Computing SVD (one-time)..."):
+            U, sigma, Vt = compute_svd_cached(img_matrix)
+        
+        st.sidebar.success("✅ SVD computed!")
         
         # Rank slider
         k = st.sidebar.slider(
-            "Select Rank (k)",
+            "Compression Level (Rank k)",
             min_value=1,
             max_value=min(100, max_rank),
             value=min(20, max_rank),
             step=1,
-            help="Number of singular values to keep"
+            help="Adjust in real-time!"
         )
         
-        # Compression ratio
-        compression_ratio = calculate_compression_ratio((m, n), k)
-        st.sidebar.metric("Compression Ratio", f"{compression_ratio:.1f}%")
+        # Real-time compression (FAST)
+        compressed_img = compress_image_fast(U, sigma, Vt, k)
         
-        # Compress button
-        if st.sidebar.button("🚀 Compress Image", type="primary"):
+        # Metrics
+        compression_ratio = calculate_compression_ratio((m, n), k)
+        energy = calculate_energy_retention(sigma, k)
+        metrics = compute_quality_metrics(img_matrix, compressed_img)
+        
+        # Display metrics in sidebar
+        st.sidebar.metric("Compression", f"{compression_ratio:.1f}%")
+        st.sidebar.metric("Energy Retained", f"{energy:.1f}%")
+        st.sidebar.metric("PSNR", f"{metrics['PSNR']:.1f} dB")
+        
+        # Main display - side by side
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 📸 Original Image")
+            st.image(img_matrix.astype(np.uint8), use_container_width=True, clamp=True)
+            st.caption(f"Size: {m}×{n} = {m*n:,} values")
+        
+        with col2:
+            st.markdown(f"### 🗜️ Compressed (k={k})")
+            st.image(compressed_img, use_container_width=True, clamp=True)
+            st.caption(f"Storage: {k*(m+n+1):,} values ({compression_ratio:.1f}% savings)")
+        
+        # Expandable sections
+        with st.expander("📊 View Singular Values"):
+            fig_sv = plot_singular_values_fast(sigma, k)
+            st.pyplot(fig_sv)
+            plt.close()
+        
+        with st.expander("⚡ View Energy Retention"):
+            fig_energy = plot_energy_retention_fast(sigma)
+            st.pyplot(fig_energy)
+            plt.close()
+            st.info(f"💡 With k={k}, you retain {energy:.2f}% of the image information!")
+        
+        with st.expander("🔬 Technical Details"):
+            col_a, col_b = st.columns(2)
             
-            with st.spinner("Compressing image..."):
+            with col_a:
+                st.markdown("**Matrix Dimensions:**")
+                st.write(f"- Original: {m} × {n}")
+                st.write(f"- Rank: {k}")
+                st.write(f"- U: {m} × {k}")
+                st.write(f"- Σ: {k} × {k}")
+                st.write(f"- V^T: {k} × {n}")
+            
+            with col_b:
+                st.markdown("**Quality Metrics:**")
+                st.write(f"- PSNR: {metrics['PSNR']:.2f} dB")
+                st.write(f"- MSE: {metrics['MSE']:.2f}")
                 
-                # Perform SVD compression
-                compressed_img = compress_image_svd(img_matrix, k)
+                if metrics['PSNR'] > 35:
+                    quality = "Excellent 🟢"
+                elif metrics['PSNR'] > 25:
+                    quality = "Good 🟡"
+                else:
+                    quality = "Fair 🟠"
                 
-                # Calculate metrics
-                metrics = compute_quality_metrics(img_matrix, compressed_img)
-                
-                # Get singular values
-                sigma = get_singular_values(img_matrix)
-                
-                # Display results in tabs
-                tab1, tab2, tab3, tab4 = st.tabs([
-                    "📊 Comparison",
-                    "📈 Singular Values",
-                    "⚡ Energy Retention",
-                    "📋 Details"
-                ])
-                
-                with tab1:
-                    st.subheader("Image Comparison")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("**Original Image**")
-                        st.image(img_matrix.astype(np.uint8), 
-                                use_column_width=True,
-                                clamp=True)
-                    
-                    with col2:
-                        st.markdown(f"**Compressed Image (k={k})**")
-                        st.image(compressed_img.astype(np.uint8),
-                                use_column_width=True,
-                                clamp=True)
-                
-                with tab2:
-                    st.subheader("Singular Value Spectrum")
-                    fig_sv = plot_singular_values(sigma, k)
-                    st.pyplot(fig_sv)
-                    plt.close()
-                    
-                    st.info(f"""
-                    📌 **Interpretation:** 
-                    - Total singular values: {len(sigma)}
-                    - Using top {k} values (marked in red)
-                    - Larger values contain more important information
-                    """)
-                
-                with tab3:
-                    st.subheader("Cumulative Energy Retention")
-                    fig_energy = plot_energy_retention(sigma)
-                    st.pyplot(fig_energy)
-                    plt.close()
-                    
-                    # Calculate energy retained with k components
-                    energy = sigma ** 2
-                    energy_retained = np.sum(energy[:k]) / np.sum(energy) * 100
-                    
-                    st.success(f"""
-                    ✅ **With k={k} components:**
-                    - Retained {energy_retained:.2f}% of total energy
-                    - Compression ratio: {compression_ratio:.1f}%
-                    """)
-                
-                with tab4:
-                    st.subheader("Technical Details")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("### 📐 Matrix Dimensions")
-                        st.write(f"- Original: {m} × {n}")
-                        st.write(f"- Rank: {k}")
-                        st.write(f"- U matrix: {m} × {k}")
-                        st.write(f"- Σ matrix: {k} × {k}")
-                        st.write(f"- V^T matrix: {k} × {n}")
-                    
-                    with col2:
-                        st.markdown("### 📊 Quality Metrics")
-                        st.metric("PSNR", f"{metrics['PSNR']:.2f} dB")
-                        st.metric("MSE", f"{metrics['MSE']:.2f}")
-                        
-                        # Quality assessment
-                        if metrics['PSNR'] > 40:
-                            quality = "Excellent 🟢"
-                        elif metrics['PSNR'] > 30:
-                            quality = "Good 🟡"
-                        else:
-                            quality = "Fair 🟠"
-                        
-                        st.write(f"**Quality:** {quality}")
-                    
-                    st.markdown("### 💾 Storage Savings")
-                    original_storage = m * n
-                    compressed_storage = k * (m + n + 1)
-                    
-                    st.write(f"- Original: {original_storage:,} values")
-                    st.write(f"- Compressed: {compressed_storage:,} values")
-                    st.write(f"- Saved: {original_storage - compressed_storage:,} values")
+                st.write(f"- Quality: {quality}")
 
 else:
-    # Instructions when no image is uploaded
+    # Welcome screen
     st.info("""
-    👈 **Get Started:**
-    1. Upload an image using the sidebar
-    2. Or check "Use Example Image" to try it out
-    3. Adjust the rank slider to control compression
-    4. Click "Compress Image" to see results
+    ### 🚀 Get Started:
+    1. Upload an image from the sidebar
+    2. Or use the example image
+    3. Adjust the slider to see **instant** compression!
+    
+    **⚡ Optimized with caching** - SVD computed once, compressions are instant!
     """)
     
-    st.markdown("""
-    ---
-    ### 📚 About This Tool
+    col1, col2, col3 = st.columns(3)
     
-    This application demonstrates **image compression** using concepts from linear algebra:
+    with col1:
+        st.markdown("### 📐 Matrix Theory")
+        st.write("Images = Matrices")
+        st.write("SVD: A = UΣV^T")
     
-    - **Matrix Representation:** Images are represented as matrices
-    - **SVD Decomposition:** A = U Σ V^T
-    - **Rank Reduction:** Keep only top-k singular values
-    - **Orthogonality:** U and V are orthogonal matrices
-    - **Compression:** Reduce storage while maintaining quality
+    with col2:
+        st.markdown("### 🗜️ Compression")
+        st.write("Rank reduction")
+        st.write("Keep top-k values")
     
-    **Mathematical Foundation:**
-    - Vector spaces and subspaces
-    - Eigenvalues and eigenvectors
-    - Orthonormal bases
-    - Matrix rank and dimension
-    """)
+    with col3:
+        st.markdown("### ⚡ Performance")
+        st.write("Cached computations")
+        st.write("Real-time updates")
 
 # Footer
 st.divider()
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    <p>📖 MATH 201 - Linear Algebra Project | Image Compression using SVD</p>
-</div>
-""", unsafe_allow_html=True)
+st.caption("📖 MATH 201 - Linear Algebra | Optimized Image Compression")
