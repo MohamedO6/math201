@@ -3,25 +3,24 @@ import matplotlib.pyplot as plt
 from image_compression import *
 import os
 
+# ============================================================
+# MAIN DEMO FUNCTION
+# ============================================================
+
 def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
-    """
-    Run image compression demo with multiple k values
-    
-    Parameters:
-    -----------
-    image_path : str
-        Path to input image
-    k_values : list
-        List of rank values to test
-    """
     
     print("=" * 60)
-    print("IMAGE COMPRESSION DEMO")
+    print("IMAGE COMPRESSION DEMO - SVD APPLICATION")
     print("=" * 60)
     
-    # Load image
+    # ============================================================
+    # IMAGE LOADING
+    # ============================================================
+    
     print(f"\n📂 Loading image: {image_path}")
-    img_matrix = load_image(image_path, grayscale=True)
+    
+    img = Image.open(image_path).convert('L')
+    img_matrix = np.array(img, dtype=np.float32)
     
     if img_matrix is None:
         print("❌ Error loading image!")
@@ -32,15 +31,25 @@ def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
     print(f"   Dimensions: {m} × {n} pixels")
     print(f"   Original size: {m * n:,} values")
     
-    # Get singular values
-    print("\n🔍 Computing SVD...")
-    sigma = get_singular_values(img_matrix)
+    # ============================================================
+    # SVD COMPUTATION
+    # ============================================================
+    
+    print("\n🔍 Computing Singular Value Decomposition...")
+    from scipy.linalg import svd
+    U, sigma, Vt = svd(img_matrix, full_matrices=False)
     print(f"✅ SVD computed! Found {len(sigma)} singular values")
     
-    # Create results directory
+    # ============================================================
+    # RESULTS DIRECTORY
+    # ============================================================
+    
     os.makedirs("results", exist_ok=True)
     
-    # Test different compression levels
+    # ============================================================
+    # COMPRESSION TESTS
+    # ============================================================
+    
     print("\n" + "=" * 60)
     print("COMPRESSION RESULTS")
     print("=" * 60)
@@ -51,24 +60,22 @@ def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
         print(f"\n🎯 Testing with k = {k}")
         print("-" * 40)
         
-        # Compress image
-        compressed = compress_image_svd(img_matrix, k)
+        compressed = U[:, :k] @ np.diag(sigma[:k]) @ Vt[:k, :]
+        compressed = np.clip(compressed, 0, 255).astype(np.uint8)
         
-        # Calculate metrics
         compression_ratio = calculate_compression_ratio((m, n), k)
-        metrics = compute_quality_metrics(img_matrix, compressed)
         
-        # Calculate energy retained
+        mse = np.mean((img_matrix.astype(float) - compressed.astype(float)) ** 2)
+        psnr = 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else float('inf')
+        
         energy = sigma ** 2
         energy_retained = np.sum(energy[:k]) / np.sum(energy) * 100
         
-        # Print results
         print(f"   Compression Ratio: {compression_ratio:.1f}%")
-        print(f"   PSNR: {metrics['PSNR']:.2f} dB")
-        print(f"   MSE: {metrics['MSE']:.2f}")
+        print(f"   PSNR: {psnr:.2f} dB")
+        print(f"   MSE: {mse:.2f}")
         print(f"   Energy Retained: {energy_retained:.2f}%")
         
-        # Save compressed image
         output_path = f"results/compressed_k{k}.png"
         plt.imsave(output_path, compressed, cmap='gray', vmin=0, vmax=255)
         print(f"   💾 Saved: {output_path}")
@@ -77,23 +84,23 @@ def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
             'k': k,
             'compressed': compressed,
             'compression_ratio': compression_ratio,
-            'psnr': metrics['PSNR'],
+            'psnr': psnr,
             'energy': energy_retained
         })
     
-    # Create comparison plot
+    # ============================================================
+    # COMPARISON PLOT
+    # ============================================================
+    
     print("\n📊 Creating comparison plots...")
     
-    # Plot 1: All compressions side by side
     n_images = len(k_values) + 1
     fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4))
     
-    # Original
     axes[0].imshow(img_matrix, cmap='gray', vmin=0, vmax=255)
     axes[0].set_title('Original', fontsize=12, fontweight='bold')
     axes[0].axis('off')
     
-    # Compressed versions
     for idx, result in enumerate(results):
         axes[idx + 1].imshow(result['compressed'], cmap='gray', vmin=0, vmax=255)
         title = f"k={result['k']}\nPSNR: {result['psnr']:.1f} dB"
@@ -105,43 +112,67 @@ def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
     print("   ✅ Saved: results/comparison_all.png")
     plt.close()
     
-    # Plot 2: Singular values
-    fig_sv = plot_singular_values(sigma)
+    # ============================================================
+    # SINGULAR VALUES PLOT
+    # ============================================================
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(sigma, 'b-', linewidth=2)
+    ax.set_xlabel('Index', fontsize=12)
+    ax.set_ylabel('Singular Value', fontsize=12)
+    ax.set_title('Singular Value Spectrum', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
     plt.savefig('results/singular_values.png', dpi=150, bbox_inches='tight')
     print("   ✅ Saved: results/singular_values.png")
     plt.close()
     
-    # Plot 3: Energy retention
-    fig_energy = plot_energy_retention(sigma)
+    # ============================================================
+    # ENERGY RETENTION PLOT
+    # ============================================================
+    
+    energy = sigma ** 2
+    cumulative_energy = np.cumsum(energy) / np.sum(energy) * 100
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(cumulative_energy, 'g-', linewidth=2)
+    ax.axhline(y=90, color='r', linestyle='--', linewidth=1.5, label='90% Energy')
+    ax.axhline(y=95, color='orange', linestyle='--', linewidth=1.5, label='95% Energy')
+    ax.set_xlabel('Rank (k)', fontsize=12)
+    ax.set_ylabel('Energy Retained (%)', fontsize=12)
+    ax.set_title('Cumulative Energy Retention', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim([0, 105])
+    plt.tight_layout()
     plt.savefig('results/energy_retention.png', dpi=150, bbox_inches='tight')
     print("   ✅ Saved: results/energy_retention.png")
     plt.close()
     
-    # Summary table
+    # ============================================================
+    # SUMMARY TABLE
+    # ============================================================
+    
     print("\n" + "=" * 60)
     print("SUMMARY TABLE")
     print("=" * 60)
-    print(f"{'k':<8} {'Compression':<15} {'PSNR (dB)':<12} {'Energy %':<12}")
+    print(f"{'Rank k':<10} {'Compression':<15} {'PSNR (dB)':<12} {'Energy %':<12}")
     print("-" * 60)
     for result in results:
-        print(f"{result['k']:<8} {result['compression_ratio']:<14.1f}% "
+        print(f"{result['k']:<10} {result['compression_ratio']:<14.1f}% "
               f"{result['psnr']:<11.2f} {result['energy']:<11.2f}%")
     
     print("\n✅ Demo completed! Check the 'results' folder for output files.")
     print("=" * 60)
 
-# ====================================
+# ============================================================
 # MAIN EXECUTION
-# ====================================
+# ============================================================
 
 if __name__ == "__main__":
     
-    # 🔧 USER CONFIGURATION
-    # Change this to your image path
-    IMAGE_PATH = "sample_image.jpg"  # <-- PUT YOUR IMAGE HERE
+    IMAGE_PATH = "sample_image.jpg"
     
-    # Choose compression levels to test
-    K_VALUES = [5, 10, 20, 50, 100]  # <-- ADJUST AS NEEDED
+    K_VALUES = [5, 10, 20, 50, 100]
     
-    # Run the demo
     run_compression_demo(IMAGE_PATH, K_VALUES)
