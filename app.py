@@ -105,33 +105,33 @@ if k * (m + n + 1) >= m * n:
         # IMAGE COMPRESSION
         # ============================================================
         
-        compressed_img = compress_image_fast(U, sigma, Vt, k)
+compressed_img = compress_image_fast(U, sigma, Vt, k)
         
-        compression_ratio = calculate_compression_ratio((m, n), k)
-        energy = calculate_energy_retention(sigma, k)
-        metrics = compute_quality_metrics(img_matrix, compressed_img)
+compression_ratio = calculate_compression_ratio((m, n), k)
+energy = calculate_energy_retention(sigma, k)
+metrics = compute_quality_metrics(img_matrix, compressed_img)
         
         # ============================================================
         # METRICS DISPLAY
         # ============================================================
         
-        st.sidebar.divider()
-        st.sidebar.metric("Compression Ratio", f"{compression_ratio:.1f}%")
-        st.sidebar.metric("Energy Retained", f"{energy:.1f}%")
-        st.sidebar.metric("PSNR Quality", f"{metrics['PSNR']:.1f} dB")
+st.sidebar.divider()
+st.sidebar.metric("Compression Ratio", f"{compression_ratio:.1f}%")
+st.sidebar.metric("Energy Retained", f"{energy:.1f}%")
+st.sidebar.metric("PSNR Quality", f"{metrics['PSNR']:.1f} dB")
         
         # ============================================================
         # IMAGE COMPARISON
         # ============================================================
         
-        col1, col2 = st.columns(2)
+col1, col2 = st.columns(2)
         
-        with col1:
+with col1:
             st.markdown("### Original Image")
             st.image(img_matrix.astype(np.uint8), width='stretch')
             st.caption(f"Storage: {m*n:,} values")
         
-        with col2:
+with col2:
             st.markdown(f"### Compressed Image (Rank k={k})")
             st.image(compressed_img, width='stretch')
             st.caption(f"Storage: {k*(m+n+1):,} values")
@@ -140,7 +140,7 @@ if k * (m + n + 1) >= m * n:
         # SINGULAR VALUES PLOT
         # ============================================================
         
-        with st.expander("📊 Singular Values Spectrum"):
+with st.expander("📊 Singular Values Spectrum"):
             fig_sv = plot_singular_values_fast(sigma, k)
             st.pyplot(fig_sv)
             plt.close()
@@ -150,7 +150,7 @@ if k * (m + n + 1) >= m * n:
         # ENERGY RETENTION PLOT
         # ============================================================
         
-        with st.expander("⚡ Energy Retention Analysis"):
+with st.expander("⚡ Energy Retention Analysis"):
             fig_energy = plot_energy_retention_fast(sigma)
             st.pyplot(fig_energy)
             plt.close()
@@ -160,7 +160,7 @@ if k * (m + n + 1) >= m * n:
         # MATHEMATICAL DETAILS
         # ============================================================
         
-        with st.expander("🔬 Mathematical Details"):
+with st.expander("🔬 Mathematical Details"):
             col_a, col_b = st.columns(2)
             
             with col_a:
@@ -171,7 +171,7 @@ if k * (m + n + 1) >= m * n:
                 st.write(f"Matrix Σ: {k} × {k}")
                 st.write(f"Matrix V^T: {k} × {n}")
             
-            with col_b:
+with col_b:
                 st.markdown("**Quality Metrics**")
                 st.write(f"PSNR: {metrics['PSNR']:.2f} dB")
                 st.write(f"MSE: {metrics['MSE']:.2f}")
@@ -184,12 +184,12 @@ if k * (m + n + 1) >= m * n:
                 else:
                     st.error("Quality: Fair")
             
-            st.markdown("**Storage Calculation**")
-            original_storage = m * n
-            compressed_storage = k * (m + n + 1)
-            st.write(f"Original: {original_storage:,} values")
-            st.write(f"Compressed: {compressed_storage:,} values")
-            st.write(f"Savings: {original_storage - compressed_storage:,} values ({compression_ratio:.1f}%)")
+st.markdown("**Storage Calculation**")
+original_storage = m * n
+compressed_storage = k * (m + n + 1)
+st.write(f"Original: {original_storage:,} values")
+st.write(f"Compressed: {compressed_storage:,} values")
+st.write(f"Savings: {original_storage - compressed_storage:,} values ({compression_ratio:.1f}%)")
 
 # ============================================================
 # WELCOME SCREEN
