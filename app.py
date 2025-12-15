@@ -68,7 +68,7 @@ if uploaded_file is not None or use_example:
         
         # Rank slider
         k = st.sidebar.slider(
-            "Compression Level (Rank k)",
+            "Image Quality (Rank k)",
             min_value=1,
             max_value=min(100, max_rank),
             value=min(20, max_rank),
