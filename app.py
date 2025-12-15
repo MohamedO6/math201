@@ -74,33 +74,33 @@ if uploaded_file is not None or use_example:
         
         st.sidebar.success("✅ SVD computed")
         
-        # ============================================================
-        # QUALITY SLIDER
-        # ============================================================
-        
-        max_useful_k = get_max_useful_rank(m, n)
-        max_slider_k = min(max_rank, max_useful_k, 100)
-        
-        st.sidebar.info(f"💡 Max useful rank: {max_useful_k}")
-        
-        quality_percent = st.sidebar.slider(
-            "Image Quality %",
-            min_value=1,
-            max_value=100,
-            value=20,
-            step=1,
-            help="Percentage of singular values to keep"
-        )
-        
-        k = max(1, int(max_slider_k * quality_percent / 100))
-        
-        col_a, col_b = st.sidebar.columns(2)
-        col_a.metric("Current k", k)
-        col_b.metric("Max rank", max_rank)
-        
-        if k * (m + n + 1) >= m * n:
-            st.sidebar.error("⚠️ No compression benefit!")
-        
+# ============================================================
+# QUALITY SLIDER
+# ============================================================
+
+max_useful_k = get_max_useful_rank(m, n)
+max_slider_k = min(max_rank, max_useful_k)
+
+st.sidebar.info(f"💡 Image has {max_rank} total components")
+
+k = st.sidebar.slider(
+    "Number of Components (k)",
+    min_value=1,
+    max_value=max_slider_k,
+    value=min(20, max_slider_k),
+    step=1,
+    help="Number of singular values to keep"
+)
+
+quality_percent = (k / max_rank) * 100
+
+col_a, col_b = st.sidebar.columns(2)
+col_a.metric("Quality", f"{quality_percent:.1f}%")
+col_b.metric("Max useful", max_useful_k)
+
+if k * (m + n + 1) >= m * n:
+    st.sidebar.error("⚠️ No compression benefit!")
+
         # ============================================================
         # IMAGE COMPRESSION
         # ============================================================
