@@ -128,12 +128,12 @@ if uploaded_file is not None or use_example:
         
         with col1:
             st.markdown("### Original Image")
-            st.image(img_matrix.astype(np.uint8), use_container_width=True, clamp=True)
+            st.image(img_matrix.astype(np.uint8), width='stretch')
             st.caption(f"Storage: {m*n:,} values")
         
         with col2:
             st.markdown(f"### Compressed Image (Rank k={k})")
-            st.image(compressed_img, use_container_width=True, clamp=True)
+            st.image(compressed_img, width='stretch')
             st.caption(f"Storage: {k*(m+n+1):,} values")
         
         # ============================================================
