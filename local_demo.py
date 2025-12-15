@@ -46,48 +46,29 @@ def run_compression_demo(image_path, k_values=[5, 10, 20, 50]):
     
     os.makedirs("results", exist_ok=True)
     
-    # ============================================================
-    # COMPRESSION TESTS
-    # ============================================================
+# ============================================================
+# COMPRESSION TESTS
+# ============================================================
+
+# Filter k values to only useful ones
+m, n = img_matrix.shape
+max_useful_k = int((m * n) / (m + n + 1)) - 1
+k_values_filtered = [k for k in k_values if k <= max_useful_k]
+
+if len(k_values_filtered) < len(k_values):
+    print(f"\n⚠️  Warning: Some k values removed (max useful k = {max_useful_k})")
+    print(f"   Using k values: {k_values_filtered}")
+
+for k in k_values_filtered:
+    # ... rest of code
     
-    print("\n" + "=" * 60)
-    print("COMPRESSION RESULTS")
-    print("=" * 60)
+    compression_ratio = calculate_compression_ratio((m, n), k)
     
-    results = []
-    
-    for k in k_values:
-        print(f"\n🎯 Testing with k = {k}")
-        print("-" * 40)
-        
-        compressed = U[:, :k] @ np.diag(sigma[:k]) @ Vt[:k, :]
-        compressed = np.clip(compressed, 0, 255).astype(np.uint8)
-        
-        compression_ratio = calculate_compression_ratio((m, n), k)
-        
-        mse = np.mean((img_matrix.astype(float) - compressed.astype(float)) ** 2)
-        psnr = 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else float('inf')
-        
-        energy = sigma ** 2
-        energy_retained = np.sum(energy[:k]) / np.sum(energy) * 100
-        
-        print(f"   Compression Ratio: {compression_ratio:.1f}%")
-        print(f"   PSNR: {psnr:.2f} dB")
-        print(f"   MSE: {mse:.2f}")
-        print(f"   Energy Retained: {energy_retained:.2f}%")
-        
-        output_path = f"results/compressed_k{k}.png"
-        plt.imsave(output_path, compressed, cmap='gray', vmin=0, vmax=255)
-        print(f"   💾 Saved: {output_path}")
-        
-        results.append({
-            'k': k,
-            'compressed': compressed,
-            'compression_ratio': compression_ratio,
-            'psnr': psnr,
-            'energy': energy_retained
-        })
-    
+    # Skip if no compression benefit
+    if compression_ratio <= 0:
+        print(f"   ⚠️  Skipped - no compression benefit")
+        continue
+
     # ============================================================
     # COMPARISON PLOT
     # ============================================================
