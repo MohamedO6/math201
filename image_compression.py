@@ -54,25 +54,19 @@ def calculate_compression_ratio(original_shape, k):
     m, n = original_shape
     original_size = m * n
     compressed_size = k * (m + n + 1)
+    
+    if compressed_size >= original_size:
+        return 0.0
+    
     ratio = (1 - compressed_size / original_size) * 100
     return ratio
 
-@st.cache_data
-def compute_quality_metrics(original, compressed):
-    mse = np.mean((original.astype(float) - compressed.astype(float)) ** 2)
-    
-    if mse == 0:
-        psnr = float('inf')
-    else:
-        psnr = 20 * np.log10(255.0 / np.sqrt(mse))
-    
-    return {'MSE': mse, 'PSNR': psnr}
-
-@st.cache_data
-def calculate_energy_retention(sigma, k):
-    energy = sigma ** 2
-    energy_retained = np.sum(energy[:k]) / np.sum(energy) * 100
-    return energy_retained
+def get_max_useful_rank(m, n):
+    """
+    Calculate maximum k where compression is still beneficial
+    """
+    max_k = int((m * n) / (m + n + 1)) - 1
+    return max(1, max_k)
 
 # ============================================================
 # VISUALIZATION: SINGULAR VALUES
