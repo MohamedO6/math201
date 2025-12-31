@@ -103,6 +103,13 @@ if uploaded_file is not None or use_example:
             help="Choose compression algorithm"
         )
         
+        # Initialize variables
+        compressed_img = None
+        sigma_vals = None
+        compression_ratio = 0
+        energy = 0
+        quality_percent = 0
+        
         if compression_method == "DCT-SVD (Rank)":
             
             st.sidebar.info(f"💡 Image has {max_rank} total components")
@@ -151,10 +158,10 @@ if uploaded_file is not None or use_example:
                 compressed_img = partial_reconstruction(img_to_compress, keep_fraction)
             
             compression_ratio = calculate_freq_compression_ratio((m, n), keep_fraction)
-            sigma_vals = np.ones(10)
             energy = keep_fraction * 100
             quality_percent = keep_fraction * 100
         
+        # Calculate metrics (works for both methods)
         metrics = compute_quality_metrics(img_matrix, compressed_img)
         
         # ============================================================
@@ -216,33 +223,45 @@ if uploaded_file is not None or use_example:
             
             with tab1:
                 st.subheader("Singular Value Spectrum")
-                fig_sv = plot_singular_values(sigma_vals, k)
-                st.pyplot(fig_sv)
-                plt.close()
-                st.caption("The singular values show the importance of each component")
+                try:
+                    fig_sv = plot_singular_values(sigma_vals, k)
+                    st.pyplot(fig_sv)
+                    plt.close()
+                    st.caption("The singular values show the importance of each component")
+                except Exception as e:
+                    st.error(f"Error plotting singular values: {e}")
             
             with tab2:
                 st.subheader("Cumulative Energy Retention")
-                fig_energy = plot_energy_retention(sigma_vals)
-                st.pyplot(fig_energy)
-                plt.close()
-                st.info(f"✅ With k={k} components, {energy:.2f}% of energy retained")
+                try:
+                    fig_energy = plot_energy_retention(sigma_vals)
+                    st.pyplot(fig_energy)
+                    plt.close()
+                    st.info(f"✅ With k={k} components, {energy:.2f}% of energy retained")
+                except Exception as e:
+                    st.error(f"Error plotting energy: {e}")
             
             with tab3:
                 st.subheader("Reconstruction Error vs Rank")
-                with st.spinner("Computing rank-error curve..."):
-                    ks, errors = compute_rank_error_curve(img_matrix, max_k=min(50, max_rank))
-                fig_error = plot_rank_error_curve(ks, errors)
-                st.pyplot(fig_error)
-                plt.close()
-                st.caption("Error decreases as we use more components")
+                try:
+                    with st.spinner("Computing rank-error curve..."):
+                        ks, errors = compute_rank_error_curve(img_matrix, max_k=min(50, max_rank))
+                    fig_error = plot_rank_error_curve(ks, errors)
+                    st.pyplot(fig_error)
+                    plt.close()
+                    st.caption("Error decreases as we use more components")
+                except Exception as e:
+                    st.error(f"Error computing rank-error curve: {e}")
             
             with tab4:
                 st.subheader("Frequency Spectrum")
-                fig_spectrum = plot_frequency_spectrum(img_matrix)
-                st.pyplot(fig_spectrum)
-                plt.close()
-                st.caption("Low frequencies (center) contain most image information")
+                try:
+                    fig_spectrum = plot_frequency_spectrum(img_matrix)
+                    st.pyplot(fig_spectrum)
+                    plt.close()
+                    st.caption("Low frequencies (center) contain most image information")
+                except Exception as e:
+                    st.error(f"Error plotting spectrum: {e}")
             
             with tab5:
                 st.subheader("Mathematical Details")
@@ -275,16 +294,26 @@ if uploaded_file is not None or use_example:
                     st.write(f"Original: {original_storage:,}")
                     st.write(f"Compressed: {compressed_storage:,}")
                     st.write(f"Ratio: {compression_ratio:.1f}%")
+                
+                st.divider()
+                
+                if apply_filter:
+                    st.info(f"🔧 Gaussian filter applied with σ={sigma_filter}")
+                else:
+                    st.info("🔧 No preprocessing filter applied")
         
         else:  # Frequency Masking
             tab1, tab2 = st.tabs(["🌊 Frequency Spectrum", "🔬 Details"])
             
             with tab1:
                 st.subheader("Frequency Spectrum")
-                fig_spectrum = plot_frequency_spectrum(img_matrix)
-                st.pyplot(fig_spectrum)
-                plt.close()
-                st.caption(f"Keeping {keep_fraction*100:.0f}% of frequency components (centered)")
+                try:
+                    fig_spectrum = plot_frequency_spectrum(img_matrix)
+                    st.pyplot(fig_spectrum)
+                    plt.close()
+                    st.caption(f"Keeping {keep_fraction*100:.0f}% of frequency components (centered)")
+                except Exception as e:
+                    st.error(f"Error plotting spectrum: {e}")
             
             with tab2:
                 st.subheader("Mathematical Details")
@@ -311,6 +340,13 @@ if uploaded_file is not None or use_example:
                     st.write(f"PSNR: {metrics['PSNR']:.2f} dB")
                     st.write(f"MSE: {metrics['MSE']:.2f}")
                     st.write(f"Compression: {compression_ratio:.1f}%")
+                
+                st.divider()
+                
+                if apply_filter:
+                    st.info(f"🔧 Gaussian filter applied with σ={sigma_filter}")
+                else:
+                    st.info("🔧 No preprocessing filter applied")
 
 # ============================================================
 # WELCOME SCREEN
