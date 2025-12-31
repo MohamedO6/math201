@@ -220,6 +220,50 @@ if uploaded_file is not None or use_example:
             st.caption(f"PSNR: {metrics['PSNR']:.1f} dB | Saved: {compression_ratio:.1f}%")
         
         # ============================================================
+        # DOWNLOAD SECTION (NEW!)
+        # ============================================================
+        
+        st.divider()
+        
+        col_a, col_b, col_c = st.columns([1, 2, 1])
+        
+        with col_b:
+            st.markdown("### 📥 Download Compressed Image")
+            
+            # Create download buffer
+            buf = BytesIO()
+            Image.fromarray(compressed_img).save(buf, format='PNG')
+            byte_data = buf.getvalue()
+            
+            # Calculate file size
+            file_size_kb = len(byte_data) / 1024
+            
+            # Download button
+            if compression_method == "DCT-SVD (Rank)":
+                filename = f"compressed_k{k}.png"
+            else:
+                filename = f"compressed_frac{keep_fraction:.2f}.png"
+            
+            st.download_button(
+                label="📥 Download PNG",
+                data=byte_data,
+                file_name=filename,
+                mime="image/png",
+                use_container_width=True
+            )
+            
+            # Show file info
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("File Size", f"{file_size_kb:.1f} KB")
+            with col2:
+                st.metric("Compression", f"{compression_ratio:.1f}%")
+            with col3:
+                st.metric("Quality", f"{metrics['PSNR']:.1f} dB")
+        
+        st.divider()
+
+        # ============================================================
         # VISUALIZATIONS
         # ============================================================
         
