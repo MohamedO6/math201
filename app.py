@@ -16,8 +16,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📸 Image Compression using Singular Value Decomposition")
-st.markdown("Linear Algebra Application - Matrix Rank Reduction Technique")
+st.title("📸 Image Compression using DCT-SVD")
+st.markdown("Linear Algebra Application - DCT Transform with Low-Rank Approximation")
 st.divider()
 
 # ============================================================
@@ -66,49 +66,64 @@ if uploaded_file is not None or use_example:
         st.sidebar.success(f"✅ Image: {m} × {n} pixels")
         
         # ============================================================
-        # SVD COMPUTATION
+        # FILTER OPTIONS
         # ============================================================
         
-        with st.spinner("Computing SVD decomposition..."):
-            U, sigma, Vt = compute_svd_cached(img_matrix)
+        st.sidebar.divider()
+        st.sidebar.subheader("🔧 Preprocessing")
         
-        st.sidebar.success("✅ SVD computed")
+        apply_filter = st.sidebar.checkbox(
+            "Apply Gaussian Filter",
+            value=False,
+            help="Reduces noise before compression"
+        )
+        
+        if apply_filter:
+            sigma_filter = st.sidebar.slider(
+                "Filter Strength (σ)",
+                min_value=0.5,
+                max_value=3.0,
+                value=1.0,
+                step=0.5,
+                help="Higher values = more smoothing"
+            )
+        else:
+            sigma_filter = 1.0
         
         # ============================================================
-        # QUALITY SLIDER
+        # COMPRESSION SLIDER
         # ============================================================
         
-        max_useful_k = get_max_useful_rank(m, n)
-        max_slider_k = min(max_rank, max_useful_k)
+        st.sidebar.divider()
+        st.sidebar.subheader("🗜️ Compression")
         
         st.sidebar.info(f"💡 Image has {max_rank} total components")
         
         k = st.sidebar.slider(
             "Number of Components (k)",
             min_value=1,
-            max_value=max_slider_k,
-            value=min(20, max_slider_k),
+            max_value=min(max_rank, 200),
+            value=min(20, max_rank),
             step=1,
             help="Number of singular values to keep"
         )
         
         quality_percent = (k / max_rank) * 100
         
-        col_a, col_b = st.sidebar.columns(2)
-        col_a.metric("Quality", f"{quality_percent:.1f}%")
-        col_b.metric("Max useful", max_useful_k)
-        
-        if k * (m + n + 1) >= m * n:
-            st.sidebar.error("⚠️ No compression benefit!")
-        
         # ============================================================
-        # IMAGE COMPRESSION
+        # COMPRESSION EXECUTION
         # ============================================================
         
-        compressed_img = compress_image_fast(U, sigma, Vt, k)
+        with st.spinner("Compressing image..."):
+            compressed_img, sigma_vals = compress_image_dct_svd(
+                img_matrix, 
+                k, 
+                apply_filter=apply_filter,
+                sigma_filter=sigma_filter
+            )
         
         compression_ratio = calculate_compression_ratio((m, n), k)
-        energy = calculate_energy_retention(sigma, k)
+        energy = calculate_energy_retention(sigma_vals, k)
         metrics = compute_quality_metrics(img_matrix, compressed_img)
         
         # ============================================================
@@ -116,9 +131,22 @@ if uploaded_file is not None or use_example:
         # ============================================================
         
         st.sidebar.divider()
+        st.sidebar.subheader("📊 Results")
+        
+        col_a, col_b = st.sidebar.columns(2)
+        col_a.metric("Quality", f"{quality_percent:.1f}%")
+        col_b.metric("Rank k", k)
+        
         st.sidebar.metric("Compression Ratio", f"{compression_ratio:.1f}%")
         st.sidebar.metric("Energy Retained", f"{energy:.1f}%")
         st.sidebar.metric("PSNR Quality", f"{metrics['PSNR']:.1f} dB")
+        
+        if metrics['PSNR'] > 35:
+            st.sidebar.success("🟢 Excellent Quality")
+        elif metrics['PSNR'] > 25:
+            st.sidebar.warning("🟡 Good Quality")
+        else:
+            st.sidebar.error("🟠 Fair Quality")
         
         # ============================================================
         # IMAGE COMPARISON
@@ -127,44 +155,62 @@ if uploaded_file is not None or use_example:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### Original Image")
+            st.markdown("### 📸 Original Image")
             st.image(img_matrix.astype(np.uint8), use_column_width=True)
             st.caption(f"Storage: {m*n:,} values")
         
         with col2:
-            st.markdown(f"### Compressed Image (Rank k={k})")
+            st.markdown(f"### 🗜️ Compressed (k={k})")
             st.image(compressed_img, use_column_width=True)
-            st.caption(f"Storage: {k*(m+n+1):,} values")
+            st.caption(f"Storage: {k*(m+n+1):,} values | Saved: {compression_ratio:.1f}%")
         
         # ============================================================
-        # SINGULAR VALUES PLOT
+        # VISUALIZATIONS
         # ============================================================
         
-        with st.expander("📊 Singular Values Spectrum"):
-            fig_sv = plot_singular_values_fast(sigma, k)
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📊 Singular Values", 
+            "⚡ Energy", 
+            "📉 Rank vs Error",
+            "🔬 Details"
+        ])
+        
+        with tab1:
+            st.subheader("Singular Value Spectrum")
+            fig_sv = plot_singular_values(sigma_vals, k)
             st.pyplot(fig_sv)
             plt.close()
-            st.caption("Larger singular values contain more important image information")
+            st.caption("The singular values show the importance of each component in the DCT domain")
         
-        # ============================================================
-        # ENERGY RETENTION PLOT
-        # ============================================================
-        
-        with st.expander("⚡ Energy Retention Analysis"):
-            fig_energy = plot_energy_retention_fast(sigma)
+        with tab2:
+            st.subheader("Cumulative Energy Retention")
+            fig_energy = plot_energy_retention(sigma_vals)
             st.pyplot(fig_energy)
             plt.close()
-            st.info(f"With k={k} components, {energy:.2f}% of image energy is retained")
+            st.info(f"✅ With k={k} components, {energy:.2f}% of image energy is retained")
         
-        # ============================================================
-        # MATHEMATICAL DETAILS
-        # ============================================================
+        with tab3:
+            st.subheader("Reconstruction Error vs Rank")
+            with st.spinner("Computing rank-error curve..."):
+                ks, errors = compute_rank_error_curve(img_matrix, max_k=min(50, max_rank))
+            fig_error = plot_rank_error_curve(ks, errors)
+            st.pyplot(fig_error)
+            plt.close()
+            st.caption("Shows how reconstruction error decreases as we use more components")
         
-        with st.expander("🔬 Mathematical Details"):
+        with tab4:
+            st.subheader("Mathematical Details")
+            
             col_a, col_b = st.columns(2)
             
             with col_a:
-                st.markdown("**SVD Decomposition: A = UΣV^T**")
+                st.markdown("**DCT-SVD Decomposition**")
+                st.write("1. Apply 2D DCT transform")
+                st.write("2. Compute SVD: DCT(A) = UΣV^T")
+                st.write("3. Keep top-k singular values")
+                st.write("4. Reconstruct via inverse DCT")
+                st.write("")
+                st.markdown("**Matrix Dimensions**")
                 st.write(f"Original Matrix A: {m} × {n}")
                 st.write(f"Rank k: {k}")
                 st.write(f"Matrix U: {m} × {k}")
@@ -176,20 +222,21 @@ if uploaded_file is not None or use_example:
                 st.write(f"PSNR: {metrics['PSNR']:.2f} dB")
                 st.write(f"MSE: {metrics['MSE']:.2f}")
                 st.write(f"Energy: {energy:.2f}%")
-                
-                if metrics['PSNR'] > 35:
-                    st.success("Quality: Excellent")
-                elif metrics['PSNR'] > 25:
-                    st.warning("Quality: Good")
-                else:
-                    st.error("Quality: Fair")
+                st.write("")
+                st.markdown("**Storage Analysis**")
+                original_storage = m * n
+                compressed_storage = k * (m + n + 1)
+                st.write(f"Original: {original_storage:,} values")
+                st.write(f"Compressed: {compressed_storage:,} values")
+                st.write(f"Savings: {original_storage - compressed_storage:,} values")
+                st.write(f"Ratio: {compression_ratio:.1f}%")
             
-            st.markdown("**Storage Calculation**")
-            original_storage = m * n
-            compressed_storage = k * (m + n + 1)
-            st.write(f"Original: {original_storage:,} values")
-            st.write(f"Compressed: {compressed_storage:,} values")
-            st.write(f"Savings: {original_storage - compressed_storage:,} values ({compression_ratio:.1f}%)")
+            st.divider()
+            
+            if apply_filter:
+                st.info(f"🔧 Gaussian filter applied with σ={sigma_filter}")
+            else:
+                st.info("🔧 No preprocessing filter applied")
 
 # ============================================================
 # WELCOME SCREEN
@@ -200,33 +247,62 @@ else:
     ### 🚀 Getting Started
     1. Upload an image using the sidebar
     2. Or check "Use Example Image"
-    3. Adjust the quality slider to control compression
-    4. View real-time results and analysis
+    3. Optionally apply Gaussian filter for noise reduction
+    4. Adjust the rank slider to control compression
+    5. View real-time results and analysis
     """)
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("### 📐 Linear Algebra Concepts")
-        st.write("• Matrix representation of images")
+        st.markdown("### 📐 Mathematical Foundation")
+        st.write("• Discrete Cosine Transform (DCT)")
         st.write("• Singular Value Decomposition")
-        st.write("• Orthogonal matrices and eigenvalues")
+        st.write("• Low-rank matrix approximation")
+        st.write("• Energy compaction property")
     
     with col2:
-        st.markdown("### 🗜️ Compression Technique")
-        st.write("• Rank-k approximation")
-        st.write("• Dimension reduction")
-        st.write("• Information preservation")
+        st.markdown("### 🗜️ Compression Pipeline")
+        st.write("• Optional Gaussian filtering")
+        st.write("• 2D DCT transformation")
+        st.write("• SVD in frequency domain")
+        st.write("• Rank-k truncation")
+        st.write("• Inverse DCT reconstruction")
     
     with col3:
-        st.markdown("### ⚡ Performance")
-        st.write("• Cached computations")
-        st.write("• Real-time compression")
-        st.write("• Interactive visualization")
+        st.markdown("### 📊 Analysis Tools")
+        st.write("• Singular value spectrum")
+        st.write("• Energy retention curves")
+        st.write("• Rank vs error analysis")
+        st.write("• PSNR quality metrics")
+    
+    st.divider()
+    
+    st.markdown("### 🎓 Linear Algebra Concepts")
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.markdown("""
+        **Matrix Decomposition:**
+        - DCT transforms spatial domain to frequency domain
+        - SVD finds optimal orthonormal basis
+        - Singular values represent importance
+        - Rank reduction preserves most information
+        """)
+    
+    with col_b:
+        st.markdown("""
+        **Vector Spaces:**
+        - Image as vector in R^(m×n)
+        - Column/row space of transformation
+        - Orthogonality of singular vectors
+        - Dimension reduction via truncation
+        """)
 
 # ============================================================
 # FOOTER
 # ============================================================
 
 st.divider()
-st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | Image Compression Project")
+st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | DCT-SVD Image Compression Project")
