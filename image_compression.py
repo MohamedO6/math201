@@ -521,9 +521,7 @@ def recommend_k(sigma_vals, max_rank, target_energy=0.90):
     k_energy = np.argmax(cumulative_energy >= target_energy) + 1
     
     # Method 2: Elbow method - find where improvement slows down
-    # Calculate marginal improvement
     marginal_improvement = np.diff(cumulative_energy)
-    # Find where improvement drops below threshold
     threshold = 0.01  # 1% improvement
     k_elbow = np.argmax(marginal_improvement < threshold) + 1
     
@@ -531,8 +529,8 @@ def recommend_k(sigma_vals, max_rank, target_energy=0.90):
     recommended_k = min(k_energy, k_elbow)
     
     # Safety checks
-    min_k = max(5, int(0.05 * max_rank))  # At least 5 or 5% of max rank
-    max_k = int(0.3 * max_rank)  # At most 30% of max rank
+    min_k = max(5, int(0.05 * max_rank))
+    max_k = int(0.3 * max_rank)
     
     recommended_k = max(min_k, min(recommended_k, max_k))
     
