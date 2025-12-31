@@ -115,11 +115,58 @@ if uploaded_file is not None or use_example:
             
             st.sidebar.info(f"💡 Image has {max_rank} total components")
             
+            # ============================================================
+            # COMPUTE RECOMMENDATION
+            # ============================================================
+            
+            with st.spinner("Computing recommendations..."):
+                # Apply DCT first
+                if apply_filter:
+                    img_for_svd = apply_gaussian_filter(img_matrix, sigma=sigma_filter)
+                else:
+                    img_for_svd = img_matrix
+                
+                dct_temp = dct2(img_for_svd)
+                _, sigma_temp, _ = compute_svd_cached(dct_temp)
+                
+                # Get recommendation
+                rec_k, rec_energy, rec_reason = recommend_k(sigma_temp, max_rank, target_energy=0.90)
+            
+            # ============================================================
+            # RECOMMENDATION SECTION
+            # ============================================================
+            
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### 💡 Smart Recommendation")
+            
+            col_rec1, col_rec2 = st.sidebar.columns([2, 1])
+            with col_rec1:
+                st.metric("Recommended k", rec_k)
+            with col_rec2:
+                if st.button("Use", key="use_rec_k"):
+                    st.session_state.recommended_k = rec_k
+            
+            st.sidebar.caption(f"📊 {rec_reason}")
+            st.sidebar.caption(f"🗜️ Compression: {calculate_compression_ratio((m, n), rec_k):.1f}%")
+            
+            st.sidebar.markdown("---")
+            
+            # ============================================================
+            # K SLIDER
+            # ============================================================
+            
+            # Check if we should use recommended k
+            if 'recommended_k' in st.session_state:
+                default_k = st.session_state.recommended_k
+                del st.session_state.recommended_k  # Use only once
+            else:
+                default_k = min(20, max_rank)
+            
             k = st.sidebar.slider(
                 "Number of Components (k)",
                 min_value=1,
                 max_value=min(max_rank, 200),
-                value=min(20, max_rank),
+                value=default_k,
                 step=1,
                 help="Number of singular values to keep"
             )
@@ -221,7 +268,7 @@ if uploaded_file is not None or use_example:
             st.caption(f"PSNR: {metrics['PSNR']:.1f} dB | Saved: {compression_ratio:.1f}%")
         
         # ============================================================
-        # DOWNLOAD SECTION (NEW!)
+        # DOWNLOAD SECTION
         # ============================================================
         
         st.divider()
