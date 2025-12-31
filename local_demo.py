@@ -1,308 +1,268 @@
-import streamlit as st
 import numpy as np
-from PIL import Image
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from image_compression import *
+from PIL import Image
+from scipy.linalg import svd
+from scipy.fft import dct, idct
+from scipy.ndimage import gaussian_filter
+import os
 
 # ============================================================
-# PAGE CONFIGURATION
+# HELPER FUNCTIONS
 # ============================================================
 
-st.set_page_config(
-    page_title="Image Compression Tool",
-    page_icon="📸",
-    layout="wide"
-)
+def dct2(matrix):
+    return dct(dct(matrix.T, norm='ortho').T, norm='ortho')
 
-st.title("📸 Image Compression using DCT-SVD")
-st.markdown("Linear Algebra Application - DCT Transform with Low-Rank Approximation")
-st.divider()
+def idct2(matrix):
+    return idct(idct(matrix.T, norm='ortho').T, norm='ortho')
 
-# ============================================================
-# SIDEBAR CONTROLS
-# ============================================================
-
-st.sidebar.header("⚙️ Settings")
-
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Image",
-    type=['png', 'jpg', 'jpeg'],
-    help="Select an image file"
-)
-
-max_dimension = st.sidebar.select_slider(
-    "Maximum Image Dimension",
-    options=[400, 600, 800, 1000],
-    value=800,
-    help="Larger images take longer to process"
-)
-
-use_example = st.sidebar.checkbox("Use Example Image")
-
-# ============================================================
-# IMAGE LOADING
-# ============================================================
-
-if uploaded_file is not None or use_example:
+def compress_image_dct_svd(image_matrix, k, apply_filter=False, sigma_filter=1):
+    if apply_filter:
+        image_matrix = gaussian_filter(image_matrix, sigma=sigma_filter)
     
-    if use_example:
-        st.info("📌 Using example checkerboard pattern")
-        size = 400
-        img_matrix = np.kron(
-            [[1, 0] * 4, [0, 1] * 4] * 4,
-            np.ones((size//8, size//8))
-        ) * 255
-        img_matrix = img_matrix.astype(np.float32)
+    dct_matrix = dct2(image_matrix)
+    U, S, Vt = svd(dct_matrix, full_matrices=False)
+    
+    S_k = np.diag(S[:k])
+    U_k = U[:, :k]
+    Vt_k = Vt[:k, :]
+    
+    dct_k = U_k @ S_k @ Vt_k
+    compressed_image = idct2(dct_k)
+    compressed_image = np.clip(compressed_image, 0, 255).astype(np.uint8)
+    
+    return compressed_image, S
+
+def calculate_compression_ratio(original_shape, k):
+    m, n = original_shape
+    original_size = m * n
+    compressed_size = k * (m + n + 1)
+    if compressed_size >= original_size:
+        return 0.0
+    return (1 - compressed_size / original_size) * 100
+
+def calculate_energy_retention(sigma, k):
+    energy = sigma ** 2
+    return np.sum(energy[:k]) / np.sum(energy) * 100
+
+# ============================================================
+# MAIN DEMO FUNCTION
+# ============================================================
+
+def run_compression_demo(image_path, k_values=[5, 10, 20, 50], apply_filter=False, sigma_filter=1.0):
+    
+    print("=" * 70)
+    print("DCT-SVD IMAGE COMPRESSION DEMO")
+    print("=" * 70)
+    
+    # ============================================================
+    # IMAGE LOADING
+    # ============================================================
+    
+    print(f"\n📂 Loading image: {image_path}")
+    
+    img = Image.open(image_path).convert('L')
+    img_matrix = np.array(img, dtype=np.float32)
+    
+    m, n = img_matrix.shape
+    print(f"✅ Image loaded successfully!")
+    print(f"   Dimensions: {m} × {n} pixels")
+    print(f"   Original size: {m * n:,} values")
+    
+    if apply_filter:
+        print(f"\n🔧 Applying Gaussian filter (σ={sigma_filter})...")
+        img_matrix_filtered = gaussian_filter(img_matrix, sigma=sigma_filter)
+        print(f"✅ Filter applied")
     else:
-        with st.spinner("Loading image..."):
-            img_matrix = load_image_optimized(uploaded_file, grayscale=True, max_size=max_dimension)
+        print(f"\n🔧 No filter applied")
+        img_matrix_filtered = img_matrix
     
-    if img_matrix is not None:
-        m, n = img_matrix.shape
-        max_rank = min(m, n)
+    # ============================================================
+    # DCT COMPUTATION
+    # ============================================================
+    
+    print("\n🔍 Computing 2D DCT and SVD...")
+    dct_matrix = dct2(img_matrix_filtered)
+    U, sigma, Vt = svd(dct_matrix, full_matrices=False)
+    print(f"✅ DCT-SVD computed! Found {len(sigma)} singular values")
+    print(f"   Top 5 singular values: {sigma[:5]}")
+    
+    # ============================================================
+    # RESULTS DIRECTORY
+    # ============================================================
+    
+    os.makedirs("results", exist_ok=True)
+    
+    # ============================================================
+    # COMPRESSION TESTS
+    # ============================================================
+    
+    print("\n" + "=" * 70)
+    print("COMPRESSION RESULTS")
+    print("=" * 70)
+    
+    results = []
+    
+    for k in k_values:
+        print(f"\n🎯 Testing with k = {k}")
+        print("-" * 50)
         
-        st.sidebar.success(f"✅ Image: {m} × {n} pixels")
-        
-        # ============================================================
-        # FILTER OPTIONS
-        # ============================================================
-        
-        st.sidebar.divider()
-        st.sidebar.subheader("🔧 Preprocessing")
-        
-        apply_filter = st.sidebar.checkbox(
-            "Apply Gaussian Filter",
-            value=False,
-            help="Reduces noise before compression"
-        )
-        
-        if apply_filter:
-            sigma_filter = st.sidebar.slider(
-                "Filter Strength (σ)",
-                min_value=0.5,
-                max_value=3.0,
-                value=1.0,
-                step=0.5,
-                help="Higher values = more smoothing"
-            )
-        else:
-            sigma_filter = 1.0
-        
-        # ============================================================
-        # COMPRESSION SLIDER
-        # ============================================================
-        
-        st.sidebar.divider()
-        st.sidebar.subheader("🗜️ Compression")
-        
-        st.sidebar.info(f"💡 Image has {max_rank} total components")
-        
-        k = st.sidebar.slider(
-            "Number of Components (k)",
-            min_value=1,
-            max_value=min(max_rank, 200),
-            value=min(20, max_rank),
-            step=1,
-            help="Number of singular values to keep"
-        )
-        
-        quality_percent = (k / max_rank) * 100
-        
-        # ============================================================
-        # COMPRESSION EXECUTION
-        # ============================================================
-        
-        with st.spinner("Compressing image..."):
-            compressed_img, sigma_vals = compress_image_dct_svd(
-                img_matrix, 
-                k, 
-                apply_filter=apply_filter,
-                sigma_filter=sigma_filter
-            )
+        compressed, _ = compress_image_dct_svd(img_matrix_filtered, k, apply_filter=False)
         
         compression_ratio = calculate_compression_ratio((m, n), k)
-        energy = calculate_energy_retention(sigma_vals, k)
-        metrics = compute_quality_metrics(img_matrix, compressed_img)
         
-        # ============================================================
-        # METRICS DISPLAY
-        # ============================================================
+        mse = np.mean((img_matrix.astype(float) - compressed.astype(float)) ** 2)
+        psnr = 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else float('inf')
         
-        st.sidebar.divider()
-        st.sidebar.subheader("📊 Results")
+        energy_retained = calculate_energy_retention(sigma, k)
         
-        col_a, col_b = st.sidebar.columns(2)
-        col_a.metric("Quality", f"{quality_percent:.1f}%")
-        col_b.metric("Rank k", k)
+        print(f"   Compression Ratio: {compression_ratio:.1f}%")
+        print(f"   PSNR: {psnr:.2f} dB")
+        print(f"   MSE: {mse:.2f}")
+        print(f"   Energy Retained: {energy_retained:.2f}%")
         
-        st.sidebar.metric("Compression Ratio", f"{compression_ratio:.1f}%")
-        st.sidebar.metric("Energy Retained", f"{energy:.1f}%")
-        st.sidebar.metric("PSNR Quality", f"{metrics['PSNR']:.1f} dB")
+        output_path = f"results/compressed_k{k}.png"
+        plt.imsave(output_path, compressed, cmap='gray', vmin=0, vmax=255)
+        print(f"   💾 Saved: {output_path}")
         
-        if metrics['PSNR'] > 35:
-            st.sidebar.success("🟢 Excellent Quality")
-        elif metrics['PSNR'] > 25:
-            st.sidebar.warning("🟡 Good Quality")
-        else:
-            st.sidebar.error("🟠 Fair Quality")
-        
-        # ============================================================
-        # IMAGE COMPARISON
-        # ============================================================
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📸 Original Image")
-            st.image(img_matrix.astype(np.uint8), use_column_width=True)
-            st.caption(f"Storage: {m*n:,} values")
-        
-        with col2:
-            st.markdown(f"### 🗜️ Compressed (k={k})")
-            st.image(compressed_img, use_column_width=True)
-            st.caption(f"Storage: {k*(m+n+1):,} values | Saved: {compression_ratio:.1f}%")
-        
-        # ============================================================
-        # VISUALIZATIONS
-        # ============================================================
-        
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📊 Singular Values", 
-            "⚡ Energy", 
-            "📉 Rank vs Error",
-            "🔬 Details"
-        ])
-        
-        with tab1:
-            st.subheader("Singular Value Spectrum")
-            fig_sv = plot_singular_values(sigma_vals, k)
-            st.pyplot(fig_sv)
-            plt.close()
-            st.caption("The singular values show the importance of each component in the DCT domain")
-        
-        with tab2:
-            st.subheader("Cumulative Energy Retention")
-            fig_energy = plot_energy_retention(sigma_vals)
-            st.pyplot(fig_energy)
-            plt.close()
-            st.info(f"✅ With k={k} components, {energy:.2f}% of image energy is retained")
-        
-        with tab3:
-            st.subheader("Reconstruction Error vs Rank")
-            with st.spinner("Computing rank-error curve..."):
-                ks, errors = compute_rank_error_curve(img_matrix, max_k=min(50, max_rank))
-            fig_error = plot_rank_error_curve(ks, errors)
-            st.pyplot(fig_error)
-            plt.close()
-            st.caption("Shows how reconstruction error decreases as we use more components")
-        
-        with tab4:
-            st.subheader("Mathematical Details")
-            
-            col_a, col_b = st.columns(2)
-            
-            with col_a:
-                st.markdown("**DCT-SVD Decomposition**")
-                st.write("1. Apply 2D DCT transform")
-                st.write("2. Compute SVD: DCT(A) = UΣV^T")
-                st.write("3. Keep top-k singular values")
-                st.write("4. Reconstruct via inverse DCT")
-                st.write("")
-                st.markdown("**Matrix Dimensions**")
-                st.write(f"Original Matrix A: {m} × {n}")
-                st.write(f"Rank k: {k}")
-                st.write(f"Matrix U: {m} × {k}")
-                st.write(f"Matrix Σ: {k} × {k}")
-                st.write(f"Matrix V^T: {k} × {n}")
-            
-            with col_b:
-                st.markdown("**Quality Metrics**")
-                st.write(f"PSNR: {metrics['PSNR']:.2f} dB")
-                st.write(f"MSE: {metrics['MSE']:.2f}")
-                st.write(f"Energy: {energy:.2f}%")
-                st.write("")
-                st.markdown("**Storage Analysis**")
-                original_storage = m * n
-                compressed_storage = k * (m + n + 1)
-                st.write(f"Original: {original_storage:,} values")
-                st.write(f"Compressed: {compressed_storage:,} values")
-                st.write(f"Savings: {original_storage - compressed_storage:,} values")
-                st.write(f"Ratio: {compression_ratio:.1f}%")
-            
-            st.divider()
-            
-            if apply_filter:
-                st.info(f"🔧 Gaussian filter applied with σ={sigma_filter}")
-            else:
-                st.info("🔧 No preprocessing filter applied")
+        results.append({
+            'k': k,
+            'compressed': compressed,
+            'compression_ratio': compression_ratio,
+            'psnr': psnr,
+            'energy': energy_retained
+        })
+    
+    # ============================================================
+    # COMPARISON PLOT
+    # ============================================================
+    
+    print("\n📊 Creating comparison plots...")
+    
+    n_images = len(k_values) + 1
+    fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4))
+    
+    axes[0].imshow(img_matrix, cmap='gray', vmin=0, vmax=255)
+    axes[0].set_title('Original', fontsize=12, fontweight='bold')
+    axes[0].axis('off')
+    
+    for idx, result in enumerate(results):
+        axes[idx + 1].imshow(result['compressed'], cmap='gray', vmin=0, vmax=255)
+        title = f"k={result['k']}\nPSNR: {result['psnr']:.1f} dB"
+        axes[idx + 1].set_title(title, fontsize=10)
+        axes[idx + 1].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('results/comparison_all.png', dpi=150, bbox_inches='tight')
+    print("   ✅ Saved: results/comparison_all.png")
+    plt.close()
+    
+    # ============================================================
+    # SINGULAR VALUES PLOT
+    # ============================================================
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    n_plot = min(100, len(sigma))
+    ax.plot(range(n_plot), sigma[:n_plot], 'b-', linewidth=2)
+    ax.set_xlabel('Index', fontsize=12)
+    ax.set_ylabel('Singular Value', fontsize=12)
+    ax.set_title('Singular Value Spectrum (DCT Domain)', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('results/singular_values.png', dpi=150, bbox_inches='tight')
+    print("   ✅ Saved: results/singular_values.png")
+    plt.close()
+    
+    # ============================================================
+    # ENERGY RETENTION PLOT
+    # ============================================================
+    
+    energy = sigma ** 2
+    cumulative_energy = np.cumsum(energy) / np.sum(energy) * 100
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    n_plot = min(100, len(cumulative_energy))
+    ax.plot(range(n_plot), cumulative_energy[:n_plot], 'g-', linewidth=2)
+    ax.axhline(y=90, color='r', linestyle='--', linewidth=1.5, label='90% Energy')
+    ax.axhline(y=95, color='orange', linestyle='--', linewidth=1.5, label='95% Energy')
+    ax.set_xlabel('Rank (k)', fontsize=12)
+    ax.set_ylabel('Energy Retained (%)', fontsize=12)
+    ax.set_title('Cumulative Energy Retention', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim([0, 105])
+    plt.tight_layout()
+    plt.savefig('results/energy_retention.png', dpi=150, bbox_inches='tight')
+    print("   ✅ Saved: results/energy_retention.png")
+    plt.close()
+    
+    # ============================================================
+    # RANK VS ERROR CURVE
+    # ============================================================
+    
+    print("\n📉 Computing rank vs error curve...")
+    
+    max_k_plot = min(50, len(sigma))
+    errors = []
+    
+    for k in range(1, max_k_plot + 1):
+        dct_approx = U[:, :k] @ np.diag(sigma[:k]) @ Vt[:k, :]
+        reconstructed = idct2(dct_approx)
+        error = np.linalg.norm(img_matrix_filtered - reconstructed, ord='fro')
+        errors.append(error)
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(range(1, max_k_plot + 1), errors, 'b-', linewidth=2)
+    ax.set_xlabel('Rank (k)', fontsize=12)
+    ax.set_ylabel('Frobenius Norm Error', fontsize=12)
+    ax.set_title('Reconstruction Error vs Rank', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('results/rank_error_curve.png', dpi=150, bbox_inches='tight')
+    print("   ✅ Saved: results/rank_error_curve.png")
+    plt.close()
+    
+    # ============================================================
+    # SUMMARY TABLE
+    # ============================================================
+    
+    print("\n" + "=" * 70)
+    print("SUMMARY TABLE")
+    print("=" * 70)
+    print(f"{'Rank k':<10} {'Compression':<15} {'PSNR (dB)':<12} {'Energy %':<12}")
+    print("-" * 70)
+    for result in results:
+        print(f"{result['k']:<10} {result['compression_ratio']:<14.1f}% "
+              f"{result['psnr']:<11.2f} {result['energy']:<11.2f}%")
+    
+    print("\n✅ Demo completed! Check the 'results' folder for output files.")
+    print("=" * 70)
+    
+    print("\n📁 Generated files:")
+    print("   • comparison_all.png - Side-by-side comparison")
+    print("   • singular_values.png - Singular value spectrum")
+    print("   • energy_retention.png - Energy retention curve")
+    print("   • rank_error_curve.png - Error vs rank analysis")
+    print("   • compressed_k*.png - Individual compressed images")
 
 # ============================================================
-# WELCOME SCREEN
+# MAIN EXECUTION
 # ============================================================
 
-else:
-    st.info("""
-    ### 🚀 Getting Started
-    1. Upload an image using the sidebar
-    2. Or check "Use Example Image"
-    3. Optionally apply Gaussian filter for noise reduction
-    4. Adjust the rank slider to control compression
-    5. View real-time results and analysis
-    """)
+if __name__ == "__main__":
     
-    col1, col2, col3 = st.columns(3)
+    # 🔧 USER CONFIGURATION
+    IMAGE_PATH = "sample_image.jpg"
     
-    with col1:
-        st.markdown("### 📐 Mathematical Foundation")
-        st.write("• Discrete Cosine Transform (DCT)")
-        st.write("• Singular Value Decomposition")
-        st.write("• Low-rank matrix approximation")
-        st.write("• Energy compaction property")
+    K_VALUES = [5, 10, 20, 50, 100]
     
-    with col2:
-        st.markdown("### 🗜️ Compression Pipeline")
-        st.write("• Optional Gaussian filtering")
-        st.write("• 2D DCT transformation")
-        st.write("• SVD in frequency domain")
-        st.write("• Rank-k truncation")
-        st.write("• Inverse DCT reconstruction")
+    APPLY_FILTER = False
+    SIGMA_FILTER = 1.0
     
-    with col3:
-        st.markdown("### 📊 Analysis Tools")
-        st.write("• Singular value spectrum")
-        st.write("• Energy retention curves")
-        st.write("• Rank vs error analysis")
-        st.write("• PSNR quality metrics")
-    
-    st.divider()
-    
-    st.markdown("### 🎓 Linear Algebra Concepts")
-    
-    col_a, col_b = st.columns(2)
-    
-    with col_a:
-        st.markdown("""
-        **Matrix Decomposition:**
-        - DCT transforms spatial domain to frequency domain
-        - SVD finds optimal orthonormal basis
-        - Singular values represent importance
-        - Rank reduction preserves most information
-        """)
-    
-    with col_b:
-        st.markdown("""
-        **Vector Spaces:**
-        - Image as vector in R^(m×n)
-        - Column/row space of transformation
-        - Orthogonality of singular vectors
-        - Dimension reduction via truncation
-        """)
-
-# ============================================================
-# FOOTER
-# ============================================================
-
-st.divider()
-st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | DCT-SVD Image Compression Project")
+    # Run the demo
+    run_compression_demo(
+        IMAGE_PATH, 
+        K_VALUES,
+        apply_filter=APPLY_FILTER,
+        sigma_filter=SIGMA_FILTER
+    )
