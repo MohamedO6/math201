@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.linalg import svd
-from scipy.fft import dct, idct
+from scipy.fft import dct, idct, fft2, ifft2, fftshift, ifftshift
 import streamlit as st
 from scipy.ndimage import gaussian_filter
 
@@ -28,7 +28,6 @@ def load_image_optimized(image_file, grayscale=True, max_size=800):
         st.error(f"Error loading image: {e}")
         return None
 
-
 # ============================================================
 # OPTIONAL LINEAR FILTERING
 # ============================================================
@@ -47,6 +46,35 @@ def idct2(freq_matrix):
     return idct(idct(freq_matrix.T, norm='ortho').T, norm='ortho')
 
 # ============================================================
+# FREQUENCY DOMAIN MASKING
+# ============================================================
+
+def partial_reconstruction(image, keep_fraction=0.5):
+    dft = fft2(image)
+    dft_shifted = fftshift(dft)
+    rows, cols = dft_shifted.shape
+    center_row, center_col = rows // 2, cols // 2
+    
+    mask = np.zeros_like(dft_shifted, dtype=bool)
+    row_start = int(center_row - keep_fraction * rows // 2)
+    row_end = int(center_row + keep_fraction * rows // 2)
+    col_start = int(center_col - keep_fraction * cols // 2)
+    col_end = int(center_col + keep_fraction * cols // 2)
+    
+    mask[row_start:row_end, col_start:col_end] = True
+    dft_shifted *= mask
+    
+    dft_inverse = ifft2(ifftshift(dft_shifted))
+    return np.abs(dft_inverse).astype(np.uint8)
+
+def calculate_freq_compression_ratio(original_shape, keep_fraction):
+    m, n = original_shape
+    total_components = m * n
+    kept_components = int(total_components * keep_fraction * keep_fraction)
+    ratio = (1 - kept_components / total_components) * 100
+    return max(0.0, ratio)
+
+# ============================================================
 # SVD COMPUTATION
 # ============================================================
 
@@ -56,29 +84,21 @@ def compute_svd_cached(matrix):
     return U, sigma, Vt
 
 # ============================================================
-# LOW-RANK APPROXIMATION
+# DCT-SVD COMPRESSION
 # ============================================================
 
 def compress_image_dct_svd(image_matrix, k, apply_filter=False, sigma_filter=1):
-    # Step 1: Optional filtering
     if apply_filter:
         image_matrix = apply_gaussian_filter(image_matrix, sigma=sigma_filter)
     
-    # Step 2: 2D DCT
     dct_matrix = dct2(image_matrix)
-    
-    # Step 3: SVD on DCT
     U, S, Vt = compute_svd_cached(dct_matrix)
     
-    # Step 4: Keep top-k singular values
     S_k = np.diag(S[:k])
     U_k = U[:, :k]
     Vt_k = Vt[:k, :]
     
-    # Step 5: Low-rank approximation in DCT domain
     dct_k = U_k @ S_k @ Vt_k
-    
-    # Step 6: Reconstruct image via inverse DCT
     compressed_image = idct2(dct_k)
     compressed_image = np.clip(compressed_image, 0, 255).astype(np.uint8)
     
@@ -87,6 +107,10 @@ def compress_image_dct_svd(image_matrix, k, apply_filter=False, sigma_filter=1):
 # ============================================================
 # METRICS
 # ============================================================
+
+def get_max_useful_rank(m, n):
+    max_k = int((m * n) / (m + n + 1)) - 1
+    return max(1, max_k)
 
 def calculate_compression_ratio(original_shape, k):
     m, n = original_shape
@@ -138,6 +162,19 @@ def plot_energy_retention(sigma):
     ax.grid(True, alpha=0.3)
     ax.legend()
     ax.set_ylim([0, 105])
+    plt.tight_layout()
+    return fig
+
+def plot_frequency_spectrum(image_matrix):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    dft = fft2(image_matrix)
+    dft_shifted = fftshift(dft)
+    magnitude = np.log(np.abs(dft_shifted) + 1)
+    
+    im = ax.imshow(magnitude, cmap='hot')
+    ax.set_title('Frequency Spectrum (Log Magnitude)')
+    ax.axis('off')
+    plt.colorbar(im, ax=ax)
     plt.tight_layout()
     return fig
 
