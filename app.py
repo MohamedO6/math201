@@ -137,6 +137,14 @@ if uploaded_file is not None or use_example:
             compression_ratio = calculate_compression_ratio((m, n), k)
             energy = calculate_energy_retention(sigma_vals, k)
             
+            # Detailed reconstruction analysis
+            recon_analysis = analyze_reconstruction_quality(
+                img_matrix, 
+                compressed_img, 
+                k, 
+                sigma_vals
+            )
+            
         else:  # Frequency Masking
             
             keep_fraction = st.sidebar.slider(
@@ -160,6 +168,9 @@ if uploaded_file is not None or use_example:
             compression_ratio = calculate_freq_compression_ratio((m, n), keep_fraction)
             energy = keep_fraction * 100
             quality_percent = keep_fraction * 100
+            
+            # Dummy values for compatibility
+            recon_analysis = None
         
         # Calculate metrics (works for both methods)
         metrics = compute_quality_metrics(img_matrix, compressed_img)
@@ -213,10 +224,11 @@ if uploaded_file is not None or use_example:
         # ============================================================
         
         if compression_method == "DCT-SVD (Rank)":
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "📊 Singular Values", 
                 "⚡ Energy", 
                 "📉 Rank vs Error",
+                "🔄 Reconstruction",
                 "🌊 Frequency Spectrum",
                 "🔬 Details"
             ])
@@ -227,7 +239,15 @@ if uploaded_file is not None or use_example:
                     fig_sv = plot_singular_values(sigma_vals, k)
                     st.pyplot(fig_sv)
                     plt.close()
-                    st.caption("The singular values show the importance of each component")
+                    st.caption("The singular values show the importance of each component in the DCT domain")
+                    
+                    st.info(f"""
+                    **Interpretation:**
+                    - **Top {k} components** are kept (left of red line)
+                    - **Remaining {len(sigma_vals)-k} components** are discarded
+                    - Large singular values = important image features
+                    - Small singular values = noise or fine details
+                    """)
                 except Exception as e:
                     st.error(f"Error plotting singular values: {e}")
             
@@ -238,6 +258,13 @@ if uploaded_file is not None or use_example:
                     st.pyplot(fig_energy)
                     plt.close()
                     st.info(f"✅ With k={k} components, {energy:.2f}% of energy retained")
+                    
+                    st.markdown("""
+                    **Energy Analysis:**
+                    - Energy = (Singular Value)²
+                    - Most energy in first few components
+                    - 90% energy typically achieved with few components
+                    """)
                 except Exception as e:
                     st.error(f"Error plotting energy: {e}")
             
@@ -250,30 +277,98 @@ if uploaded_file is not None or use_example:
                     st.pyplot(fig_error)
                     plt.close()
                     st.caption("Error decreases as we use more components")
+                    
+                    st.markdown("""
+                    **Error Behavior:**
+                    - Error measured in Frobenius norm
+                    - Decreases monotonically with k
+                    - Trade-off between quality and compression
+                    """)
                 except Exception as e:
                     st.error(f"Error computing rank-error curve: {e}")
             
             with tab4:
+                st.subheader("Reconstruction Analysis")
+                try:
+                    fig_recon = plot_reconstruction_comparison(img_matrix, compressed_img, k)
+                    st.pyplot(fig_recon)
+                    plt.close()
+                    
+                    st.markdown("### 📐 Reconstruction Pipeline")
+                    st.write("""
+                    **Step-by-Step Process:**
+                    
+                    1. **Forward DCT:** Spatial Domain → Frequency Domain
+                       - Transform image to cosine basis
+                       - Y = DCT(A)
+                    
+                    2. **SVD Decomposition:** Find Principal Components
+                       - Y = U × Σ × V^T
+                       - Singular values sorted by importance
+                    
+                    3. **Low-Rank Approximation:** Keep Top-k
+                       - Y_k = U_k × Σ_k × V_k^T
+                       - Discard small singular values
+                    
+                    4. **Inverse DCT:** Frequency Domain → Spatial Domain
+                       - A_reconstructed = IDCT(Y_k)
+                       - Back to pixel representation
+                    
+                    5. **Post-processing:** Clip to [0, 255]
+                       - Ensure valid pixel values
+                    """)
+                    
+                    if recon_analysis:
+                        st.markdown("### 📊 Detailed Metrics")
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            st.metric("Energy Retained", f"{recon_analysis['energy_retained']:.2f}%")
+                            st.metric("Frobenius Error", f"{recon_analysis['frobenius_error']:.2f}")
+                        with col_b:
+                            st.metric("Relative Error", f"{recon_analysis['relative_error']:.2f}%")
+                            st.metric("Original Storage", f"{recon_analysis['original_storage']:,}")
+                        with col_c:
+                            st.metric("Compressed Storage", f"{recon_analysis['compressed_storage']:,}")
+                            st.metric("Compression Ratio", f"{recon_analysis['compression_ratio']:.1f}%")
+                    
+                except Exception as e:
+                    st.error(f"Error in reconstruction analysis: {e}")
+            
+            with tab5:
                 st.subheader("Frequency Spectrum")
                 try:
                     fig_spectrum = plot_frequency_spectrum(img_matrix)
                     st.pyplot(fig_spectrum)
                     plt.close()
                     st.caption("Low frequencies (center) contain most image information")
+                    
+                    st.markdown("""
+                    **Frequency Domain:**
+                    - **Bright center** = low frequencies (general structure)
+                    - **Darker edges** = high frequencies (fine details)
+                    - DCT concentrates energy in top-left
+                    """)
                 except Exception as e:
                     st.error(f"Error plotting spectrum: {e}")
             
-            with tab5:
+            with tab6:
                 st.subheader("Mathematical Details")
                 
                 col_a, col_b = st.columns(2)
                 
                 with col_a:
                     st.markdown("**DCT-SVD Decomposition**")
-                    st.write("1. Apply 2D DCT transform")
-                    st.write("2. Compute SVD: DCT(A) = UΣV^T")
-                    st.write("3. Keep top-k singular values")
-                    st.write("4. Reconstruct via inverse DCT")
+                    st.write("**Forward Transform:**")
+                    st.latex(r"Y = \text{DCT}(A) = C \times A \times C^T")
+                    st.write("")
+                    st.write("**SVD:**")
+                    st.latex(r"Y = U \times \Sigma \times V^T")
+                    st.write("")
+                    st.write("**Low-Rank Approximation:**")
+                    st.latex(r"Y_k = U_k \times \Sigma_k \times V_k^T")
+                    st.write("")
+                    st.write("**Inverse Transform:**")
+                    st.latex(r"A_{rec} = \text{IDCT}(Y_k) = C^T \times Y_k \times C")
                     st.write("")
                     st.markdown("**Matrix Dimensions**")
                     st.write(f"Original: {m} × {n}")
@@ -287,13 +382,38 @@ if uploaded_file is not None or use_example:
                     st.write(f"PSNR: {metrics['PSNR']:.2f} dB")
                     st.write(f"MSE: {metrics['MSE']:.2f}")
                     st.write(f"Energy: {energy:.2f}%")
+                    
+                    if recon_analysis:
+                        st.write(f"Frobenius Error: {recon_analysis['frobenius_error']:.2f}")
+                        st.write(f"Relative Error: {recon_analysis['relative_error']:.2f}%")
+                    
                     st.write("")
-                    st.markdown("**Storage**")
+                    st.markdown("**Storage Analysis**")
                     original_storage = m * n
                     compressed_storage = k * (m + n + 1)
                     st.write(f"Original: {original_storage:,}")
                     st.write(f"Compressed: {compressed_storage:,}")
+                    st.write(f"Savings: {original_storage - compressed_storage:,}")
                     st.write(f"Ratio: {compression_ratio:.1f}%")
+                
+                st.divider()
+                
+                st.markdown("**Key Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("""
+                    **Orthonormality:**
+                    - C^T × C = I
+                    - U^T × U = I
+                    - V^T × V = I
+                    """)
+                with col2:
+                    st.markdown("""
+                    **Optimality:**
+                    - Eckart-Young theorem
+                    - Minimizes ||Y - Y_k||_F
+                    - Best rank-k approximation
+                    """)
                 
                 st.divider()
                 
@@ -312,6 +432,14 @@ if uploaded_file is not None or use_example:
                     st.pyplot(fig_spectrum)
                     plt.close()
                     st.caption(f"Keeping {keep_fraction*100:.0f}% of frequency components (centered)")
+                    
+                    st.markdown("""
+                    **Frequency Masking Method:**
+                    - Apply FFT to transform to frequency domain
+                    - Keep only low-frequency components (center)
+                    - Discard high-frequency components (edges)
+                    - Apply IFFT to reconstruct image
+                    """)
                 except Exception as e:
                     st.error(f"Error plotting spectrum: {e}")
             
@@ -319,10 +447,14 @@ if uploaded_file is not None or use_example:
                 st.subheader("Mathematical Details")
                 
                 st.markdown("**Frequency Masking Method**")
-                st.write("1. Apply 2D FFT transform")
-                st.write("2. Shift zero-frequency to center")
-                st.write("3. Keep only low-frequency components")
-                st.write("4. Reconstruct via inverse FFT")
+                st.write("**Forward Transform:**")
+                st.latex(r"Y = \text{FFT}(A)")
+                st.write("**Masking:**")
+                st.latex(r"Y_{masked} = Y \odot M")
+                st.write("(M is binary mask keeping center frequencies)")
+                st.write("")
+                st.write("**Inverse Transform:**")
+                st.latex(r"A_{rec} = |\text{IFFT}(Y_{masked})|")
                 
                 st.divider()
                 
@@ -334,6 +466,7 @@ if uploaded_file is not None or use_example:
                     st.write(f"Image Size: {m} × {n}")
                     kept_size = int(m * keep_fraction)
                     st.write(f"Mask Size: {kept_size} × {kept_size}")
+                    st.write(f"Kept Components: {int((keep_fraction**2)*100)}%")
                 
                 with col_b:
                     st.markdown("**Quality**")
@@ -356,30 +489,72 @@ else:
     st.info("""
     ### 🚀 Getting Started
     1. Upload an image or use example
-    2. Choose compression method
-    3. Adjust parameters
-    4. View results and analysis
+    2. Choose compression method (DCT-SVD or Frequency Masking)
+    3. Adjust parameters to control compression
+    4. View real-time results and detailed analysis
     """)
+    
+    st.divider()
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("### 📐 DCT-SVD Method")
-        st.write("• 2D Discrete Cosine Transform")
-        st.write("• Singular Value Decomposition")
-        st.write("• Rank-k approximation")
-        st.write("• Optimal low-rank representation")
+        st.write("**Pipeline:**")
+        st.write("1. Forward DCT (Spatial → Frequency)")
+        st.write("2. SVD Decomposition")
+        st.write("3. Low-Rank Approximation (keep top-k)")
+        st.write("4. Inverse DCT (Frequency → Spatial)")
+        st.write("")
+        st.write("**Features:**")
+        st.write("• Optimal rank-k approximation")
+        st.write("• Energy-based compression")
+        st.write("• Mathematically principled")
+        st.write("• Excellent quality/size trade-off")
     
     with col2:
         st.markdown("### 🌊 Frequency Masking")
-        st.write("• 2D Fourier Transform")
-        st.write("• Low-pass frequency filtering")
-        st.write("• Spatial domain reconstruction")
-        st.write("• Preserves low frequencies")
+        st.write("**Pipeline:**")
+        st.write("1. Forward FFT (Spatial → Frequency)")
+        st.write("2. Apply mask (keep low frequencies)")
+        st.write("3. Inverse FFT (Frequency → Spatial)")
+        st.write("")
+        st.write("**Features:**")
+        st.write("• Simple and fast")
+        st.write("• Low-pass filtering")
+        st.write("• Good for smooth images")
+        st.write("• Natural noise reduction")
+    
+    st.divider()
+    
+    st.markdown("### 🎓 Linear Algebra Concepts")
+    
+    col_a, col_b, col_c = st.columns(3)
+    
+    with col_a:
+        st.markdown("**Change of Basis**")
+        st.write("• DCT/FFT as basis transformation")
+        st.write("• Orthonormal matrices")
+        st.write("• Frequency representation")
+        st.write("• Reversible transformations")
+    
+    with col_b:
+        st.markdown("**SVD Decomposition**")
+        st.write("• Matrix factorization")
+        st.write("• Singular values & vectors")
+        st.write("• Rank reduction")
+        st.write("• Optimal approximation")
+    
+    with col_c:
+        st.markdown("**Reconstruction**")
+        st.write("• Inverse transforms")
+        st.write("• Energy preservation")
+        st.write("• Error minimization")
+        st.write("• Quality metrics")
 
 # ============================================================
 # FOOTER
 # ============================================================
 
 st.divider()
-st.caption("📖 MATH 201 - Linear Algebra | Image Compression Project")
+st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | Image Compression Project")
