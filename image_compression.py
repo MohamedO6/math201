@@ -496,3 +496,59 @@ def plot_rank_error_curve(ks, errors):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     return fig
+
+def recommend_k(sigma_vals, max_rank, target_energy=0.90):
+    """
+    Recommend optimal k value balancing compression and quality
+    
+    Parameters:
+    - sigma_vals: array of singular values
+    - max_rank: maximum possible rank
+    - target_energy: target energy retention (default 90%)
+    
+    Returns:
+    - recommended_k: optimal k value
+    - energy_at_k: energy retention at recommended k
+    - reason: explanation string
+    """
+    
+    # Calculate energy for each possible k
+    energy = sigma_vals ** 2
+    total_energy = np.sum(energy)
+    cumulative_energy = np.cumsum(energy) / total_energy
+    
+    # Method 1: Find minimum k that achieves target energy
+    k_energy = np.argmax(cumulative_energy >= target_energy) + 1
+    
+    # Method 2: Elbow method - find where improvement slows down
+    # Calculate marginal improvement
+    marginal_improvement = np.diff(cumulative_energy)
+    # Find where improvement drops below threshold
+    threshold = 0.01  # 1% improvement
+    k_elbow = np.argmax(marginal_improvement < threshold) + 1
+    
+    # Choose the smaller k (more compression)
+    recommended_k = min(k_energy, k_elbow)
+    
+    # Safety checks
+    min_k = max(5, int(0.05 * max_rank))  # At least 5 or 5% of max rank
+    max_k = int(0.3 * max_rank)  # At most 30% of max rank
+    
+    recommended_k = max(min_k, min(recommended_k, max_k))
+    
+    # Get metrics at recommended k
+    energy_at_k = cumulative_energy[recommended_k - 1] * 100
+    
+    # Generate reason
+    if energy_at_k >= 95:
+        quality = "Excellent"
+    elif energy_at_k >= 90:
+        quality = "Very Good"
+    elif energy_at_k >= 85:
+        quality = "Good"
+    else:
+        quality = "Acceptable"
+    
+    reason = f"{energy_at_k:.1f}% energy, {quality} quality"
+    
+    return recommended_k, energy_at_k, reason
