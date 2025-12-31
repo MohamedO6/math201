@@ -3,7 +3,8 @@ from PIL import Image
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from scipy.linalg import svd, dct, idct
+from scipy.linalg import svd
+from scipy.fft import dct, idct
 import streamlit as st
 from scipy.ndimage import gaussian_filter
 
@@ -26,6 +27,7 @@ def load_image_optimized(image_file, grayscale=True, max_size=800):
     except Exception as e:
         st.error(f"Error loading image: {e}")
         return None
+
 
 # ============================================================
 # OPTIONAL LINEAR FILTERING
