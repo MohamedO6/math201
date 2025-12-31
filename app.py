@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import matplotlib
+from io import BytesIO
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from image_compression import *
