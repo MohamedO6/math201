@@ -305,4 +305,4 @@ else:
 # ============================================================
 
 st.divider()
-st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | DCT-SVD Image Compression Project") 
+st.caption("📖 MATH 201 - Linear Algebra and Vector Geometry | DCT-SVD Image Compression Project")
